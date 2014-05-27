@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+<head>
+   <meta charset="utf-8">
+   
+   <title>InterStella</title>
+
+   <script src="MOS6502.js"></script>
+   <script src="Core.js"></script>
+   <script src="Cartridge.js"></script>
+   <script src="TIA.js"></script>
+   
+   <script>
+      var core;
+      
+      var load_image = function(file)
+      {
+         var reader = new FileReader();
+         reader.readAsArrayBuffer(file);
+         reader.onload = function() { core.set_rom(reader.result); };
+      }
+      
+      var on_load = function(target)
+      {
+         core = new InterStella_core();
+         target.onkeydown = core.key_down.bind(core);
+         target.onkeyup = core.key_up.bind(core);
+      };
+   </script>
+</head>
+<body onload="on_load(this);">
+
+<div id="headers" style="font-family: sans-serif; margin-bottom: 0.5em;">
+   <h2 id="title" style="margin: 0;">InterStella</h2>
+   <h4 id="subtitle" style="margin: 0;">Browser-based Atari 2600 emulator</h4>
+</div>
+
+<div id="emulator_controls" style="margin-top: 0.5em; margin-bottom: 0.5em;">
+   <input type="file" onchange="load_image(this.files[0]);">
+   <button onclick="core.pause();" id="pause_button" disabled="disabled">Pause</button>
+   <button onclick="core.resume();" id="resume_button" style="display:none;">Resume</button>
+   <button onmousedown="core.reset_down();" onmouseup="core.reset_up();"
+           id="reset_button" disabled="disabled">
+   Reset
+   </button>
+   <button onmousedown="core.select_down();" onmouseup="core.select_up();"
+           id="select_button" disabled="disabled">
+   Select
+   </button>
+   <br>
+   Player 1 Difficulty:
+   <label name="p1_diff" for="p1_diff_b"><input checked="checked" type="radio" id="p1_diff_b"/>Beginner</label>
+   <label name="p1_diff" for="p1_diff_a"><input type="radio" id="p1_diff_a"/>Advanced</label>
+   <br>
+   Player 2 Difficulty:
+   <label name="p2_diff" for="p2_diff_b"><input checked="checked" type="radio" id="p2_diff_b"/>Beginner</label>
+   <label name="p2_diff" for="p2_diff_a"><input type="radio" id="p2_diff_a"/>Advanced</label>
+</div>
+
+<div id="canvas_container" style="width:480px; height:576px;">
+   <canvas id="interstella_canvas" width="160" height="192" style="width:100%; height:100%;">
+   The web browser you're using doesn't support the canvas element.
+   This emulator won't work without that; you should upgrade your browser.
+   </canvas>
+</div>
+
+<div id="jses_help_text" style="margin-top: 0.5em; font-family: sans-serif">
+   <p style="margin:0;">Controls
+   <p style="margin:0;">Joystick : Arrow Keys
+   <p style="margin:0;">Fire Button : Z Key
+   <p stype="margin:0;">Only the joystick controller is supported
+</div>
+
+</body>
+</html>
