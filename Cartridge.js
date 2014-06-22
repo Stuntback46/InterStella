@@ -18,11 +18,13 @@ InterStella_cart.prototype.load_rom = function(rom)
 
 InterStella_cart.prototype.read = function(address)
 {
+   address = address % this.rom.length;
    return this.rom[address];
 };
 
 InterStella_cart.prototype.write = function(address, value)
 {
+   address = address % this.rom.length;
    this.rom[address] = value;
 };
 

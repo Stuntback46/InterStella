@@ -38,11 +38,11 @@ InterStella_TIA.prototype.reset = function()
    this.reflect_player_0 = 0;
    this.reflect_player_1 = 0;
    this.data_playfield = 0x00000;
-   this.reset_position_player_0 = 0;
-   this.reset_position_player_1 = 0;
-   this.reset_position_missle_0 = 0;
-   this.reset_position_missle_1 = 0;
-   this.reset_position_ball = 0;
+   this.position_player_0 = 0;
+   this.position_player_1 = 0;
+   this.position_missle_0 = 0;
+   this.position_missle_1 = 0;
+   this.position_ball = 0;
    this.audio_control_0 = 0;
    this.audio_control_1 = 0;
    this.audio_freq_0 = 0;
@@ -71,7 +71,7 @@ InterStella_TIA.prototype.reset = function()
    // Internal variables, not exposed to the processor.
    this.wsync = false;
    this.h_counter = 0;
-   this.v_counter = 0;
+   this.beam = {x:0, y:0};
    this.position_player_0 = 0;
    this.position_player_1 = 0;
    this.position_missle_0 = 0;
@@ -81,202 +81,54 @@ InterStella_TIA.prototype.reset = function()
 
 InterStella_TIA.prototype.clock = function(cpu_cycles)
 {
-   // If we're in the picture area of the frame, do some rendering.
-   if (!this.vsync && !this.vblank &&
-       (this.v_counter >= 40) && (this.v_counter < 232) && (this.h_counter > 67))
+   // Figure out how many color clocks just elapsed and update the beam position.
+   var pixels = cpu_cycles * 3;
+   // Render that many pixels.
+   this.render_pixels(pixels);
+   
+   // Advance the beam and run the rest of the scanline if the CPU told us to.
+   this.beam.x += pixels;
+   if (this.beam.x > 227)
    {
-      this.render_pixels(cpu_cycles * 3);
-   }
-
-   // Update the horizontal counter, and the vertical counter if the horizontal overflowed.
-   this.h_counter = (this.h_counter + (cpu_cycles * 3)) % 228;
-   if (this.h_counter < (cpu_cycles * 3))
-   {
-      this.v_counter = (this.v_counter + 1) % 262;
+      this.beam.x -= 228;
+      // In VBLANK the beam isn't actually moving.
+      this.beam.y = (!this.vblank && !this.vsync) ? ((this.beam.y + 1) % 222) : 0;
       // Update the display if we're starting a new frame now.
-      if (!this.v_counter)
+      if (!this.beam.y)
          this.update_display();
    }
-   
-   // If the CPU wants us to halt it until the end of the scanline, oblige it.
    if (this.wsync)
    {
       this.wsync = false;
+      pixels += (228 - this.beam.x);
       
-      // See if we need to render the rest of the scanline.
-      if (!this.vsync && !this.vblank &&
-          (this.v_counter >= 40) && (this.v_counter < 232) && (this.h_counter > 67) &&
-          (this.h_counter < 227))
-      {
-         this.render_pixels((227 - this.h_counter) * 3);
-      }
+      // Render whatever we just added.
+      this.render_pixels(228 - this.beam.x);
+      
+      // Update the beam position once again.
+      this.beam.x = 0;
+      this.beam.y = (!this.vblank && !this.vsync) ? ((this.beam.y + 1) % 222) : 0;
+      // Update the display if we're starting a new frame now.
+      if (!this.beam.y)
+         this.update_display();
+   }
 
-      var retval = ((227 - this.h_counter) + cpu_cycles) * 3;
-      this.h_counter = 0;
-      this.v_counter = (this.v_counter + 1) % 262;
-      return retval;
-   }
-   else
-   {
-      return cpu_cycles * 3;
-   }
-};
-
-InterStella_TIA.prototype.read = function(address)
-{
-   // Only the collision bits are actually handled in this module.
-   // Technically the input ports are also the job of the TIA hardware,
-   //  but we handle all the input in the core module.
-   if (address === 0)
-      return (this.collisions.m0p1 << 7) | (this.collisions.m0p0 << 6);
-   else if (address === 1)
-      return (this.collisions.m1p0 << 7) | (this.collisions.m1p1 << 6);
-   else if (address === 2)
-      return (this.collisions.p0pf << 7) | (this.collisions.p0bl << 6);
-   else if (address === 3)
-      return (this.collisions.p1pf << 7) | (this.collisions.p1bl << 6);
-   else if (address === 4)
-      return (this.collisions.m0pf << 7) | (this.collisions.m0bl << 6);
-   else if (address === 5)
-      return (this.collisions.m1pf << 7) | (this.collisions.m1bl << 6);
-   else if (address === 6)
-      return (this.collisions.blpf << 7);
-   else if (address === 7)
-      return (this.collisions.p0p1 << 7) | (this.collisions.m0m1 << 6);
-   else
-      return 0;
-};
-
-InterStella_TIA.prototype.write = function(address, value)
-{
-   if (address === 0)
-      this.vsync = (value & 0x02) >>> 1;
-   else if (address === 1)
-      this.vblank = (value & 0x80) >>> 7;
-   else if (address === 2)
-      this.wsync = true;
-   else if (address === 3)
-      this.h_counter = 0;
-   else if (address === 4)
-   {
-      this.size_player_missle_0 = ((value & 0x30) >>> 4);
-      this.number_player_missle_0 = value & 0x07;
-   }
-   else if (address === 5)
-   {
-      this.size_player_missle_1 = ((value & 0x30) >>> 4);
-      this.number_player_missle_1 = value & 0x07;
-   }
-   else if (address === 6)
-      this.color_player_missle_0 = value >>> 1;
-   else if (address === 7)
-      this.color_player_missle_1 = value >>> 1;
-   else if (address === 8)
-      this.color_playfield = value >>> 1;
-   else if (address === 9)
-      this.color_background = value >>> 1;
-   else if (address === 0x0a)
-   {
-      this.playfield_reflect = value & 0x01;
-      this.playfield_score = ((value & 0x02) >>> 1);
-      this.playfield_priority = ((value & 0x04) >>> 2);
-      this.size_ball = ((value & 0x30) >>> 4);
-   }
-   else if (address === 0x0b)
-      this.reflect_player_0 = ((value & 0x08) >>> 3);
-   else if (address === 0x0c)
-      this.reflect_player_1 = ((value & 0x08) >>> 3);
-   else if (address === 0x0d)
-      this.data_playfield = (this.data_playfield & 0x0ffff) | ((value & 0xf0) << 12);
-   else if (address === 0x0e)
-      this.data_playfield = (this.data_playfield & 0xf00ff) | (value << 8);
-   else if (address === 0x0f)
-      this.data_playfield = (this.data_playfield & 0xfff00) | value;
-   else if (address === 0x10)
-      this.reset_position_player_0 = this.h_counter;
-   else if (address === 0x11)
-      this.reset_position_player_1 = this.h_counter;
-   else if (address === 0x12)
-      this.reset_position_missle_0 = this.h_counter;
-   else if (address === 0x13)
-      this.reset_position_missle_1 = this.h_counter;
-   else if (address === 0x14)
-      this.reset_position_ball = this.h_counter;
-   else if (address === 0x15)
-      this.audio_control_0 = value & 0x0f;
-   else if (address === 0x16)
-      this.audio_control_1 = value & 0x1f;
-   else if (address === 0x17)
-      this.audio_freq_0 = value & 0x0f;
-   else if (address === 0x18)
-      this.audio_freq_1 = value & 0x0f;
-   else if (address === 0x19)
-      this.audio_vol_0 = value & 0x0f;
-   else if (address === 0x1a)
-      this.audio_vol_1 = value & 0x0f;
-   else if (address === 0x1b)
-      this.data_player_0 = value;
-   else if (address === 0x1c)
-      this.data_player_1 = value;
-   else if (address === 0x1d)
-      this.enable_missle_0 = ((value & 0x02) >>> 1);
-   else if (address === 0x1e)
-      this.enable_missle_1 = ((value & 0x02) >>> 1);
-   else if (address === 0x1f)
-      this.enable_ball = ((value & 0x02) >>> 1);
-   else if (address === 0x20)
-      this.h_motion_player_0 = ((value & 0xf0) >>> 4);
-   else if (address === 0x21)
-      this.h_motion_player_1 = ((value & 0xf0) >>> 4);
-   else if (address === 0x22)
-      this.h_motion_missle_0 = ((value & 0xf0) >>> 4);
-   else if (address === 0x23)
-      this.h_motion_missle_1 = ((value & 0xf0) >>> 4);
-   else if (address === 0x24)
-      this.h_motion_ball = ((value & 0xf0) >>> 4);
-   else if (address === 0x25)
-      this.v_delay_player_0 = value & 0x01;
-   else if (address === 0x26)
-      this.v_delay_player_1 = value & 0x01;
-   else if (address === 0x27)
-      this.v_delay_ball = value & 0x01;
-   else if (address === 0x28)
-      this.reset_missle_0 = ((value & 0x02) >>> 1);
-   else if (address === 0x29)
-      this.reset_missle_1 = ((value & 0x02) >>> 1);
-   else if (address === 0x2a)
-   {
-      // Apply horizontal motion
-   }
-   else if (address === 0x2b)
-   {
-      // Clear horizontal motion registers
-      this.h_motion_player_0 = this.h_motion_player_1 =
-      this.h_motion_missle_0 = this.h_motion_missle_1 =
-      this.h_motion_ball = 0;
-   }
-   else if (address === 0x2c)
-   {
-      // Clear all collision latches
-      this.collisions.m0p1 = this.collisions.m0p0 = this.collisions.m1p0 =
-      this.collisions.m1p1 = this.collisions.p0pf = this.collisions.p0bl =
-      this.collisions.p1pf = this.collisions.p1bl = this.collisions.m0pf =
-      this.collisions.m0bl = this.collisions.m1pf = this.collisions.m1bl =
-      this.collisions.blpf = this.collisions.p0p1 = this.collisions.m0m1 = 0;
-   }
+   return pixels;
 };
 
 InterStella_TIA.prototype.render_pixels = function(num_pixels)
 {
-   // Figure out what to do for each pixel we were told to plot.
-   for (var x = this.h_counter; x < (this.h_counter + num_pixels); ++x)
+   // We'll draw some of the overscan area, but not all of it.
+   if (this.beam.y >= 200)
+      return;
+
+   // Figure out what to do for each pixel we were told to plot, up to the end of the line.
+   for (var x = this.beam.x; (x < (this.beam.x + num_pixels)) && (x < 228); ++x)
    {
-      // Skip to the next pixel if this is the H blank interval,
-      //  and exit the loop entirely if we've gone off the end of the line.
-      if (x < 68)
-         continue;
-      else if (x >= 228)
-         break;
+      // Skip to the next pixel if this is the H blank interval.
+      if (x < 68) continue;
+      
+      var pf_data_bit, ball_data_bit, p0_data_bit, p1_data_bit, m0_data_bit, m1_data_bit;
       
       // We'll handle the playfield first. Get the PF bit for this screen pixel.
       var pf_pixel_index = Math.floor(((x - 68) % 80) / 4);
@@ -285,9 +137,12 @@ InterStella_TIA.prototype.render_pixels = function(num_pixels)
          pf_pixel_index = 19 - pf_pixel_index;
       }
 
-      var pf_data_bit = 0;
       if (pf_pixel_index < 4)
       {
+         // These bits are displayed in inverted order, with bit 0 on the left.
+         pf_pixel_index = (pf_pixel_index === 3) ? 0 :
+                          (pf_pixel_index === 2) ? 1 :
+                          (pf_pixel_index === 1) ? 2 : 3;
          pf_data_bit = ((this.data_playfield & 0xf0000) >>> 16) & Math.pow(2, 3 - pf_pixel_index);
       }
       else if (pf_pixel_index < 12)
@@ -296,12 +151,239 @@ InterStella_TIA.prototype.render_pixels = function(num_pixels)
       }
       else
       {
+         // These bits are displayed in inverted order, with bit 0 on the left.
+         pf_pixel_index = (pf_pixel_index === 19) ? 12 :
+                          (pf_pixel_index === 18) ? 13 :
+                          (pf_pixel_index === 17) ? 14 :
+                          (pf_pixel_index === 16) ? 15 :
+                          (pf_pixel_index === 15) ? 16 :
+                          (pf_pixel_index === 14) ? 17 :
+                          (pf_pixel_index === 13) ? 18 : 19;
          pf_data_bit = (this.data_playfield & 0x000ff) & Math.pow(2, 19 - pf_pixel_index);
       }
       
-      var pf_color = pf_data_bit ? this.color_playfield : this.color_background;
+      // Now figure out whether any of the movable objects are here.
+      // First, the ball.
       
-      this.put_pixel(x - 68, this.v_counter - 40, pf_color);
+      // Now players 0 and 1.
+      
+      // And now missles 0 and 1.
+
+      // Evaluate the collision bits.
+      if (m0_data_bit && p1_data_bit)
+         this.collisions.m0p1 = 1;
+      if (m0_data_bit && p0_data_bit)
+         this.collisions.m0p0 = 1;
+      if (m1_data_bit && p0_data_bit)
+         this.collisions.m1p0 = 1;
+      if (m1_data_bit && p1_data_bit)
+         this.collisions.m1p1 = 1;
+      if (p0_data_bit && pf_data_bit)
+         this.collisions.p0pf = 1;
+      if (p0_data_bit && ball_data_bit)
+         this.collisions.p0bl = 1;
+      if (p1_data_bit && pf_data_bit)
+         this.collisions.p1pf = 1;
+      if (pf_data_bit && ball_data_bit)
+         this.collisions.p1bl = 1;
+      if (m0_data_bit && pf_data_bit)
+         this.collisions.m0pf = 1;
+      if (m0_data_bit && ball_data_bit)
+         this.collisions.m0bl = 1;
+      if (m1_data_bit && pf_data_bit)
+         this.collisions.m1pf = 1;
+      if (m1_data_bit && ball_data_bit)
+         this.collisions.m1bl = 1;
+      if (ball_data_bit && pf_data_bit)
+         this.collisions.blpf = 1;
+      if (p0_data_bit && p1_data_bit)
+         this.collisions.p0p1 = 1;
+      if (m0_data_bit && m1_data_bit)
+         this.collisions.m0m1 = 1;
+      
+      // Determine which color to plot based on priority.
+      var pixel_color = this.color_background;
+      if (this.playfield_priority)
+      {
+         if (pf_data_bit || ball_data_bit)
+            if (this.playfield_score && pf_data_bit)
+               pixel_color = (x < 148) ? this.color_player_missle_0 : this.color_player_missle_1;
+            else
+               pixel_color = this.color_playfield;
+         else if (p0_data_bit || m0_data_bit)
+            pixel_color = this.color_player_missle_0;
+         else if (p1_data_bit || m1_data_bit)
+            pixel_color = this.color_player_missle_1;
+      }
+      else
+      {
+         if (p0_data_bit || m0_data_bit)
+            pixel_color = this.color_player_missle_0;
+         else if (p1_data_bit || m1_data_bit)
+            pixel_color = this.color_player_missle_1;
+         else if (pf_data_bit || ball_data_bit)
+            if (this.playfield_score && pf_data_bit)
+               pixel_color = (x < 148) ? this.color_player_missle_0 : this.color_player_missle_1;
+            else
+               pixel_color = this.color_playfield;
+      }
+
+      // Finally actually plot the pixel.
+      this.put_pixel(x - 68, this.beam.y, pixel_color);
+   }
+};
+
+InterStella_TIA.prototype.read = function(address)
+{
+   // Only the collision bits are actually handled in this module.
+   // Technically the input ports are also the job of the TIA hardware,
+   //  but we handle all the input in the core module.
+   if (address === 0)      // CXM0P
+      return (this.collisions.m0p1 << 7) | (this.collisions.m0p0 << 6);
+   else if (address === 1) // CXM1P
+      return (this.collisions.m1p0 << 7) | (this.collisions.m1p1 << 6);
+   else if (address === 2) // CXP0FB
+      return (this.collisions.p0pf << 7) | (this.collisions.p0bl << 6);
+   else if (address === 3) // CXP1FB
+      return (this.collisions.p1pf << 7) | (this.collisions.p1bl << 6);
+   else if (address === 4) // CXM0FB
+      return (this.collisions.m0pf << 7) | (this.collisions.m0bl << 6);
+   else if (address === 5) // CXM1FB
+      return (this.collisions.m1pf << 7) | (this.collisions.m1bl << 6);
+   else if (address === 6) // CXBLPF
+      return (this.collisions.blpf << 7);
+   else if (address === 7) // CXPPMM
+      return (this.collisions.p0p1 << 7) | (this.collisions.m0m1 << 6);
+   else // INPT0 - INPT5
+      return 0;
+};
+
+InterStella_TIA.prototype.write = function(address, value)
+{
+   if (address === 0)      // VSYNC
+      this.vsync = (value & 0x02) >>> 1;
+   else if (address === 1) // VBLANK
+      this.vblank = (value & 0x80) >>> 7;
+   else if (address === 2) // WSYNC
+      this.wsync = true;
+   else if (address === 3) // RSYNC
+      ; // This is documented as a testing command; we won't do it here.
+   else if (address === 4) // NUSIZ0
+   {
+      this.size_player_missle_0 = ((value & 0x30) >>> 4);
+      this.number_player_missle_0 = value & 0x07;
+   }
+   else if (address === 5) // NUSIZ1
+   {
+      this.size_player_missle_1 = ((value & 0x30) >>> 4);
+      this.number_player_missle_1 = value & 0x07;
+   }
+   else if (address === 6) // COLUP0
+      this.color_player_missle_0 = value >>> 1;
+   else if (address === 7) // COLUP1
+      this.color_player_missle_1 = value >>> 1;
+   else if (address === 8) // COLUPF
+      this.color_playfield = value >>> 1;
+   else if (address === 9) // COLUBK
+      this.color_background = value >>> 1;
+   else if (address === 0x0a) // CTRLPF
+   {
+      this.playfield_reflect = value & 0x01;
+      this.playfield_score = ((value & 0x02) >>> 1);
+      this.playfield_priority = ((value & 0x04) >>> 2);
+      this.size_ball = ((value & 0x30) >>> 4);
+   }
+   else if (address === 0x0b) // REFP0
+      this.reflect_player_0 = ((value & 0x08) >>> 3);
+   else if (address === 0x0c) // REFP1
+      this.reflect_player_1 = ((value & 0x08) >>> 3);
+   else if (address === 0x0d) // PF0
+      this.data_playfield = (this.data_playfield & 0x0ffff) | ((value & 0xf0) << 12);
+   else if (address === 0x0e) // PF1
+      this.data_playfield = (this.data_playfield & 0xf00ff) | (value << 8);
+   else if (address === 0x0f) // PF2
+      this.data_playfield = (this.data_playfield & 0xfff00) | value;
+   else if (address === 0x10) // RESP0
+      this.position_player_0 = this.beam.x;
+   else if (address === 0x11) // RESP1
+      this.position_player_1 = this.beam.x;
+   else if (address === 0x12) // RESM0
+      this.position_missle_0 = this.beam.x;
+   else if (address === 0x13) // RESM1
+      this.position_missle_1 = this.beam.x;
+   else if (address === 0x14) // RESBL
+      this.position_ball = this.beam.x;
+   else if (address === 0x15) // AUDC0
+      this.audio_control_0 = value & 0x0f;
+   else if (address === 0x16) // AUDC1
+      this.audio_control_1 = value & 0x1f;
+   else if (address === 0x17) // AUDF0
+      this.audio_freq_0 = value & 0x0f;
+   else if (address === 0x18) // AUDF1
+      this.audio_freq_1 = value & 0x0f;
+   else if (address === 0x19) // AUDV0
+      this.audio_vol_0 = value & 0x0f;
+   else if (address === 0x1a) // AUDV1
+      this.audio_vol_1 = value & 0x0f;
+   else if (address === 0x1b) // GRP0
+      this.data_player_0 = value;
+   else if (address === 0x1c) // GRP1
+      this.data_player_1 = value;
+   else if (address === 0x1d) // ENAM0
+      this.enable_missle_0 = ((value & 0x02) >>> 1);
+   else if (address === 0x1e) // ENAM1
+      this.enable_missle_1 = ((value & 0x02) >>> 1);
+   else if (address === 0x1f) // ENABL
+      this.enable_ball = ((value & 0x02) >>> 1);
+   else if (address === 0x20) // HMP0
+      this.h_motion_player_0 = ((value & 0xf0) >>> 4);
+   else if (address === 0x21) // HMP1
+      this.h_motion_player_1 = ((value & 0xf0) >>> 4);
+   else if (address === 0x22) // HMM0
+      this.h_motion_missle_0 = ((value & 0xf0) >>> 4);
+   else if (address === 0x23) // HMM1
+      this.h_motion_missle_1 = ((value & 0xf0) >>> 4);
+   else if (address === 0x24) // HMBL
+      this.h_motion_ball = ((value & 0xf0) >>> 4);
+   else if (address === 0x25) // VDELP0
+      this.v_delay_player_0 = value & 0x01;
+   else if (address === 0x26) // VDELP1
+      this.v_delay_player_1 = value & 0x01;
+   else if (address === 0x27) // VDELBL
+      this.v_delay_ball = value & 0x01;
+   else if (address === 0x28) // RESMP0
+      this.reset_missle_0 = ((value & 0x02) >>> 1);
+   else if (address === 0x29) // RESMP1
+      this.reset_missle_1 = ((value & 0x02) >>> 1);
+   else if (address === 0x2a) // HMOVE
+   {
+      // Apply horizontal motion
+      // First convert the given value to a signed offset.
+      var offset = value >>> 4;
+      if (offset & 0x08)
+         offset = -((0x0f & ~offset) + 1);
+      
+      this.position_player_0 += offset;
+      this.position_player_1 += offset;
+      this.position_missle_0 += offset;
+      this.position_missle_1 += offset;
+      this.position_ball += offset;
+   }
+   else if (address === 0x2b) // HMCLR
+   {
+      // Clear horizontal motion registers
+      this.h_motion_player_0 = this.h_motion_player_1 =
+      this.h_motion_missle_0 = this.h_motion_missle_1 =
+      this.h_motion_ball = 0;
+   }
+   else if (address === 0x2c) // CXCLR
+   {
+      // Clear all collision latches
+      this.collisions.m0p1 = this.collisions.m0p0 = this.collisions.m1p0 =
+      this.collisions.m1p1 = this.collisions.p0pf = this.collisions.p0bl =
+      this.collisions.p1pf = this.collisions.p1bl = this.collisions.m0pf =
+      this.collisions.m0bl = this.collisions.m1pf = this.collisions.m1bl =
+      this.collisions.blpf = this.collisions.p0p1 = this.collisions.m0m1 = 0;
    }
 };
 
