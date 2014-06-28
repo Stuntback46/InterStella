@@ -23,13 +23,13 @@ InterStella_TIA.prototype.reset = function()
    // Initialize the registers/flags.
    this.vsync = 0;
    this.vblank = 0;
-   this.size_player_missle_0 = 0;
-   this.number_player_missle_0 = 0;
-   this.size_plater_missle_1 = 0;
-   this.number_player_missle_1 = 0;
-   this.color_player_missle_0 = 0;
-   this.color_player_missle_1 = 0;
-   this.color_playfield = 0;
+   this.size_missile_0 = 0;
+   this.number_player_missile_0 = 0;
+   this.size_missile_1 = 0;
+   this.number_player_missile_1 = 0;
+   this.color_player_missile_0 = 0;
+   this.color_player_missile_1 = 0;
+   this.color_playfield_ball = 0;
    this.color_background = 0;
    this.size_ball = 0;
    this.playfield_reflect = 0;
@@ -40,8 +40,8 @@ InterStella_TIA.prototype.reset = function()
    this.data_playfield = 0x00000;
    this.position_player_0 = 0;
    this.position_player_1 = 0;
-   this.position_missle_0 = 0;
-   this.position_missle_1 = 0;
+   this.position_missile_0 = 0;
+   this.position_missile_1 = 0;
    this.position_ball = 0;
    this.audio_control_0 = 0;
    this.audio_control_1 = 0;
@@ -51,19 +51,19 @@ InterStella_TIA.prototype.reset = function()
    this.audio_vol_1 = 0;
    this.data_player_0 = 0x00;
    this.data_player_1 = 0x00;
-   this.enable_missle_0 = 0;
-   this.enable_missle_1 = 0;
+   this.enable_missile_0 = 0;
+   this.enable_missile_1 = 0;
    this.enable_ball = 0;
    this.h_motion_player_0 = 0;
    this.h_motion_player_1 = 0;
-   this.h_motion_missle_0 = 0;
-   this.h_motion_missle_1 = 0;
+   this.h_motion_missile_0 = 0;
+   this.h_motion_missile_1 = 0;
    this.h_motion_ball = 0;
    this.v_delay_player_0 = 0;
    this.v_delay_player_1 = 0;
    this.v_delay_ball = 0;
-   this.reset_missle_0 = 0;
-   this.reset_missle_1 = 0;
+   this.reset_missile_0 = 0;
+   this.reset_missile_1 = 0;
    this.collisions = {m0p1 : 0, m0p0 : 0, m1p0 : 0, m1p1 : 0, p0pf : 0,
                       p0bl : 0, p1pf : 0, p1bl : 0, m0pf : 0, m0bl : 0,
                       m1pf : 0, m1bl : 0, blpf : 0, p0p1 : 0, m0m1 : 0};
@@ -74,16 +74,16 @@ InterStella_TIA.prototype.reset = function()
    this.beam = {x:0, y:0};
    this.position_player_0 = 0;
    this.position_player_1 = 0;
-   this.position_missle_0 = 0;
-   this.position_missle_1 = 0;
+   this.position_missile_0 = 0;
+   this.position_missile_1 = 0;
    this.position_ball = 0;
 };
 
 InterStella_TIA.prototype.clock = function(cpu_cycles)
 {
-   // Figure out how many color clocks just elapsed and update the beam position.
+   // Figure out how many color clocks just elapsed.
    var pixels = cpu_cycles * 3;
-   // Render that many pixels.
+   // Render that many pixels if we're rendering.
    this.render_pixels(pixels);
    
    // Advance the beam and run the rest of the scanline if the CPU told us to.
@@ -128,10 +128,11 @@ InterStella_TIA.prototype.render_pixels = function(num_pixels)
       // Skip to the next pixel if this is the H blank interval.
       if (x < 68) continue;
       
+      var pixel = x - 68;
       var pf_data_bit, ball_data_bit, p0_data_bit, p1_data_bit, m0_data_bit, m1_data_bit;
       
       // We'll handle the playfield first. Get the PF bit for this screen pixel.
-      var pf_pixel_index = Math.floor(((x - 68) % 80) / 4);
+      var pf_pixel_index = Math.floor((pixel % 80) / 4);
       if ((x >= 148) && this.playfield_reflect)
       {
          pf_pixel_index = 19 - pf_pixel_index;
@@ -164,11 +165,77 @@ InterStella_TIA.prototype.render_pixels = function(num_pixels)
       
       // Now figure out whether any of the movable objects are here.
       // First, the ball.
+      if (this.enable_ball && (x >= this.position_ball) && (x < (this.position_ball + this.size_ball)))
+      {
+         ball_data_bit = 1;
+      }
       
       // Now players 0 and 1.
+      if (x >= this.position_player_0)
+      {
+         // There are four possible spots where we might have to draw a missile,
+         //  depending on the state of the NUSIZn registers.
+         if ((x < (this.position_player_0 + 8)) ||
+             (((this.player_missile_number_0 === 1) || (this.player_missile_number_0 === 3)) &&
+              (x < (this.position_player_0 + 8 + 16))) ||
+             (((this.player_missile_number_0 === 2) || (this.player_missile_number_0 === 3) ||
+               (this.player_missile_number_0 === 6)) &&
+              (x < (this.position_player_0 + 8 + 32))) ||
+             (((this.player_missile_number_0 === 4) || (this.player_missile_number_0 === 6)) &&
+              (x < (this.position_player_0 + 8 + 64))))
+         {
+            p0_data_bit = this.data_player_0 & (this.reflect_player_0 ? (1 << (pixel % 8)) : 
+                                                                        (0x80 >>> (pixel % 8)));
+         }
+      }
+      if (x >= this.position_player_1)
+      {
+         if ((x < (this.position_player_1 + 8)) ||
+             (((this.player_missile_number_1 === 1) || (this.player_missile_number_1 === 3)) &&
+              (x < (this.position_player_1 + 8 + 16))) ||
+             (((this.player_missile_number_1 === 2) || (this.player_missile_number_1 === 3) ||
+               (this.player_missile_number_1 === 6)) &&
+              (x < (this.position_player_1 + 8 + 32))) ||
+             (((this.player_missile_number_1 === 4) || (this.player_missile_number_1 === 6)) &&
+              (x < (this.position_player_1 + 8 + 64))))
+         {
+            p1_data_bit = this.data_player_1 & (this.reflect_player_1 ? (1 << (pixel % 8)) : 
+                                                                        (0x80 >>> (pixel % 8)));
+         }
+      }
       
-      // And now missles 0 and 1.
-
+      // And now missiles 0 and 1.
+      if ((this.enable_missile_0) && (x >= this.position_missile_0))
+      {
+         // There are four possible spots where we might have to draw a missile,
+         //  depending on the state of the NUSIZn registers.
+         if ((x < (this.position_missile_0 + this.size_missile_0)) ||
+             (((this.player_missile_number_0 === 1) || (this.player_missile_number_0 === 3)) &&
+              (x < (this.position_missile_0 + this.size_missile_0 + 16))) ||
+             (((this.player_missile_number_0 === 2) || (this.player_missile_number_0 === 3) ||
+               (this.player_missile_number_0 === 6)) &&
+              (x < (this.position_missile_0 + this.size_missile_0 + 32))) ||
+             (((this.player_missile_number_0 === 4) || (this.player_missile_number_0 === 6)) &&
+              (x < (this.position_missile_0 + this.size_missile_0 + 64))))
+         {
+            m0_data_bit = 1;
+         }
+      }
+      if ((this.enable_missile_1) && (x >= this.position_missile_1))
+      {
+         if ((x < (this.position_missile_1 + this.size_missile_1)) ||
+             (((this.player_missile_number_1 === 1) || (this.player_missile_number_1 === 3)) &&
+              (x < (this.position_missile_1 + this.size_missile_1 + 16))) ||
+             (((this.player_missile_number_1 === 2) || (this.player_missile_number_1 === 3) ||
+               (this.player_missile_number_1 === 6)) &&
+              (x < (this.position_missile_1 + this.size_missile_1 + 32))) ||
+             (((this.player_missile_number_1 === 4) || (this.player_missile_number_1 === 6)) &&
+              (x < (this.position_missile_1 + this.size_missile_1 + 64))))
+         {
+            m1_data_bit = 1;
+         }
+      }
+      
       // Evaluate the collision bits.
       if (m0_data_bit && p1_data_bit)
          this.collisions.m0p1 = 1;
@@ -207,29 +274,29 @@ InterStella_TIA.prototype.render_pixels = function(num_pixels)
       {
          if (pf_data_bit || ball_data_bit)
             if (this.playfield_score && pf_data_bit)
-               pixel_color = (x < 148) ? this.color_player_missle_0 : this.color_player_missle_1;
+               pixel_color = (pixel < 80) ? this.color_player_missile_0 : this.color_player_missile_1;
             else
-               pixel_color = this.color_playfield;
+               pixel_color = this.color_playfield_ball;
          else if (p0_data_bit || m0_data_bit)
-            pixel_color = this.color_player_missle_0;
+            pixel_color = this.color_player_missile_0;
          else if (p1_data_bit || m1_data_bit)
-            pixel_color = this.color_player_missle_1;
+            pixel_color = this.color_player_missile_1;
       }
       else
       {
          if (p0_data_bit || m0_data_bit)
-            pixel_color = this.color_player_missle_0;
+            pixel_color = this.color_player_missile_0;
          else if (p1_data_bit || m1_data_bit)
-            pixel_color = this.color_player_missle_1;
+            pixel_color = this.color_player_missile_1;
          else if (pf_data_bit || ball_data_bit)
             if (this.playfield_score && pf_data_bit)
-               pixel_color = (x < 148) ? this.color_player_missle_0 : this.color_player_missle_1;
+               pixel_color = (pixel < 80) ? this.color_player_missile_0 : this.color_player_missile_1;
             else
-               pixel_color = this.color_playfield;
+               pixel_color = this.color_playfield_ball;
       }
 
       // Finally actually plot the pixel.
-      this.put_pixel(x - 68, this.beam.y, pixel_color);
+      this.put_pixel(pixel, this.beam.y, pixel_color);
    }
 };
 
@@ -270,20 +337,20 @@ InterStella_TIA.prototype.write = function(address, value)
       ; // This is documented as a testing command; we won't do it here.
    else if (address === 4) // NUSIZ0
    {
-      this.size_player_missle_0 = ((value & 0x30) >>> 4);
-      this.number_player_missle_0 = value & 0x07;
+      this.size_missile_0 = (1 << ((value & 0x30) >>> 4));
+      this.number_player_missile_0 = value & 0x07;
    }
    else if (address === 5) // NUSIZ1
    {
-      this.size_player_missle_1 = ((value & 0x30) >>> 4);
-      this.number_player_missle_1 = value & 0x07;
+      this.size_missile_1 = (1 << ((value & 0x30) >>> 4));
+      this.number_player_missile_1 = value & 0x07;
    }
    else if (address === 6) // COLUP0
-      this.color_player_missle_0 = value >>> 1;
+      this.color_player_missile_0 = value >>> 1;
    else if (address === 7) // COLUP1
-      this.color_player_missle_1 = value >>> 1;
+      this.color_player_missile_1 = value >>> 1;
    else if (address === 8) // COLUPF
-      this.color_playfield = value >>> 1;
+      this.color_playfield_ball = value >>> 1;
    else if (address === 9) // COLUBK
       this.color_background = value >>> 1;
    else if (address === 0x0a) // CTRLPF
@@ -291,7 +358,7 @@ InterStella_TIA.prototype.write = function(address, value)
       this.playfield_reflect = value & 0x01;
       this.playfield_score = ((value & 0x02) >>> 1);
       this.playfield_priority = ((value & 0x04) >>> 2);
-      this.size_ball = ((value & 0x30) >>> 4);
+      this.size_ball = (1 << ((value & 0x30) >>> 4));
    }
    else if (address === 0x0b) // REFP0
       this.reflect_player_0 = ((value & 0x08) >>> 3);
@@ -308,9 +375,9 @@ InterStella_TIA.prototype.write = function(address, value)
    else if (address === 0x11) // RESP1
       this.position_player_1 = this.beam.x;
    else if (address === 0x12) // RESM0
-      this.position_missle_0 = this.beam.x;
+      this.position_missile_0 = this.beam.x;
    else if (address === 0x13) // RESM1
-      this.position_missle_1 = this.beam.x;
+      this.position_missile_1 = this.beam.x;
    else if (address === 0x14) // RESBL
       this.position_ball = this.beam.x;
    else if (address === 0x15) // AUDC0
@@ -330,21 +397,48 @@ InterStella_TIA.prototype.write = function(address, value)
    else if (address === 0x1c) // GRP1
       this.data_player_1 = value;
    else if (address === 0x1d) // ENAM0
-      this.enable_missle_0 = ((value & 0x02) >>> 1);
+      this.enable_missile_0 = ((value & 0x02) >>> 1);
    else if (address === 0x1e) // ENAM1
-      this.enable_missle_1 = ((value & 0x02) >>> 1);
+      this.enable_missile_1 = ((value & 0x02) >>> 1);
    else if (address === 0x1f) // ENABL
       this.enable_ball = ((value & 0x02) >>> 1);
    else if (address === 0x20) // HMP0
-      this.h_motion_player_0 = ((value & 0xf0) >>> 4);
+   {
+      // This value is supposed to be a signed offset,
+      //  so convert it to a signed JavaScript number.
+      var offset = (value & 0xf0) >>> 4;
+      if (offset & 0x08)
+         offset = -((0x0f & ~offset) + 1);
+      this.h_motion_player_0 = offset;
+   }
    else if (address === 0x21) // HMP1
-      this.h_motion_player_1 = ((value & 0xf0) >>> 4);
+   {
+      var offset = (value & 0xf0) >>> 4;
+      if (offset & 0x08)
+         offset = -((0x0f & ~offset) + 1);
+      this.h_motion_player_1 = offset;
+   }
    else if (address === 0x22) // HMM0
-      this.h_motion_missle_0 = ((value & 0xf0) >>> 4);
+   {
+      var offset = (value & 0xf0) >>> 4;
+      if (offset & 0x08)
+         offset = -((0x0f & ~offset) + 1);
+      this.h_motion_missile_0 = offset;
+   }
    else if (address === 0x23) // HMM1
-      this.h_motion_missle_1 = ((value & 0xf0) >>> 4);
+   {
+      var offset = (value & 0xf0) >>> 4;
+      if (offset & 0x08)
+         offset = -((0x0f & ~offset) + 1);
+      this.h_motion_missile_1 = offset;
+   }
    else if (address === 0x24) // HMBL
-      this.h_motion_ball = ((value & 0xf0) >>> 4);
+   {
+      var offset = (value & 0xf0) >>> 4;
+      if (offset & 0x08)
+         offset = -((0x0f & ~offset) + 1);
+      this.h_motion_ball = offset;
+   }
    else if (address === 0x25) // VDELP0
       this.v_delay_player_0 = value & 0x01;
    else if (address === 0x26) // VDELP1
@@ -352,28 +446,37 @@ InterStella_TIA.prototype.write = function(address, value)
    else if (address === 0x27) // VDELBL
       this.v_delay_ball = value & 0x01;
    else if (address === 0x28) // RESMP0
-      this.reset_missle_0 = ((value & 0x02) >>> 1);
+      this.reset_missile_0 = ((value & 0x02) >>> 1);
    else if (address === 0x29) // RESMP1
-      this.reset_missle_1 = ((value & 0x02) >>> 1);
+      this.reset_missile_1 = ((value & 0x02) >>> 1);
    else if (address === 0x2a) // HMOVE
    {
       // Apply horizontal motion
-      // First convert the given value to a signed offset.
-      var offset = value >>> 4;
-      if (offset & 0x08)
-         offset = -((0x0f & ~offset) + 1);
+      this.position_player_0 += this.h_motion_player_0;
+      if (this.position_player_0 < 0)
+         this.position_player_0 += 256;
       
-      this.position_player_0 += offset;
-      this.position_player_1 += offset;
-      this.position_missle_0 += offset;
-      this.position_missle_1 += offset;
-      this.position_ball += offset;
+      this.position_player_1 += this.h_motion_player_1;
+      if (this.position_player_1 < 0)
+         this.position_player_1 += 256;
+      
+      this.position_missile_0 += this.h_motion_missile_0;
+      if (this.position_missile_0 < 0)
+         this.position_missile_0 += 256;
+      
+      this.position_missile_1 += this.h_motion_missile_1;
+      if (this.position_missile_1 < 0)
+         this.position_missile_1 += 256;
+      
+      this.position_ball += this.h_motion_ball;
+      if (this.position_ball < 0)
+         this.position_ball += 256;
    }
    else if (address === 0x2b) // HMCLR
    {
       // Clear horizontal motion registers
       this.h_motion_player_0 = this.h_motion_player_1 =
-      this.h_motion_missle_0 = this.h_motion_missle_1 =
+      this.h_motion_missile_0 = this.h_motion_missile_1 =
       this.h_motion_ball = 0;
    }
    else if (address === 0x2c) // CXCLR
