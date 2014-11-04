@@ -30,7 +30,7 @@ var InterStella_core = function()
    
    // Button/switch states, to be copied into the actual registers.
    this.joystick = {button: false, up: false, down: false, left: false, right: false};
-   this.switches = {select: false, reset: false, color: true, diff1: false, diff2: false};
+   this.switches = {select: false, reset: false};
 };
 
 // Frequency of the NTSC TIA, from which the CPU clock is derived.
@@ -77,6 +77,8 @@ InterStella_core.prototype.run = function()
    document.getElementById("pause_button").style.display = "inline";
    document.getElementById("resume_button").disabled = "disabled";
    document.getElementById("resume_button").style.display = "none";
+   document.getElementById("reset_button").removeAttribute("disabled");
+   document.getElementById("select_button").removeAttribute("disabled");
 
    this.paused = false;
    window.requestAnimationFrame(this.run_one_frame.bind(this));
@@ -88,6 +90,8 @@ InterStella_core.prototype.pause = function()
    document.getElementById("pause_button").style.display = "none";
    document.getElementById("resume_button").removeAttribute("disabled");
    document.getElementById("resume_button").style.display = "inline";
+   document.getElementById("reset_button").disabled = "disabled";
+   document.getElementById("select_button").disabled = "disabled";
 
    this.paused = true;
 };
@@ -100,6 +104,8 @@ InterStella_core.prototype.resume = function()
       document.getElementById("pause_button").style.display = "inline";
       document.getElementById("resume_button").disabled = "disabled";
       document.getElementById("resume_button").style.display = "none";
+      document.getElementById("reset_button").removeAttribute("disabled");
+      document.getElementById("select_button").removeAttribute("disabled");
    
       this.paused = false;
       window.requestAnimationFrame(this.run_one_frame.bind(this));
@@ -177,9 +183,9 @@ InterStella_core.prototype.read_port_b = function()
 {
    var switches = (this.switches.reset ? 0 : 1) |
                  ((this.switches.select ? 0 : 1) << 1) |
-                 ((this.switches.color ? 1 : 0) << 3) |
-                 ((this.switches.diff1 ? 1 : 0) << 6) |
-                 ((this.switches.diff2 ? 1 : 0) << 7);                 
+                 (1 << 3) | // We don't emulate the C/BW switch, lock it at Color.
+                 ((!!document.getElementById("p1_diff_a").checked ? 1 : 0) << 6) |
+                 ((!!document.getElementById("p2_diff_a").checked ? 1 : 0) << 7);
    
    return 0xff & ((this.port_b_output | ~this.port_b_direction) &
                   (switches | this.port_b_direction));

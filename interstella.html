@@ -20,25 +20,28 @@
          reader.onload = function() { core.set_rom(reader.result); };
       }
       
-      var on_load = function(target)
+      var on_load = function()
       {
          core = new InterStella_core();
-         target.onkeydown = core.key_down.bind(core);
-         target.onkeyup = core.key_up.bind(core);
+         document.body.onkeydown = core.key_down.bind(core);
+         document.body.onkeyup = core.key_up.bind(core);
       };
    </script>
 </head>
-<body onload="on_load(this);">
+<body onload="on_load();">
 
 <div id="headers" style="font-family: sans-serif; margin-bottom: 0.5em;">
    <h2 id="title" style="margin: 0;">InterStella</h2>
-   <h4 id="subtitle" style="margin: 0;">Browser-based Atari 2600 emulator</h4>
+   <h4 id="subtitle" style="margin: 0;">Atari 2600 emulator</h4>
 </div>
 
 <div id="emulator_controls" style="margin-top: 0.5em; margin-bottom: 0.5em;">
    <input type="file" onchange="load_image(this.files[0]);">
    <button onclick="core.pause();" id="pause_button" disabled="disabled">Pause</button>
    <button onclick="core.resume();" id="resume_button" style="display:none;">Resume</button>
+</div>
+
+<div id="console_switches" style="margin-top: 0.5em; margin-bottom: 0.5em;">   
    <button onmousedown="core.reset_down();" onmouseup="core.reset_up();"
            id="reset_button" disabled="disabled">
    Reset
@@ -49,12 +52,12 @@
    </button>
    <br>
    Player 1 Difficulty:
-   <label name="p1_diff" for="p1_diff_b"><input checked="checked" type="radio" id="p1_diff_b"/>Beginner</label>
-   <label name="p1_diff" for="p1_diff_a"><input type="radio" id="p1_diff_a"/>Advanced</label>
+   <label for="p1_diff_a"><input type="radio" name="p1_diff" id="p1_diff_a"/>A</label>
+   <label for="p1_diff_b"><input type="radio" name="p1_diff" id="p1_diff_b" checked />B</label>
    <br>
    Player 2 Difficulty:
-   <label name="p2_diff" for="p2_diff_b"><input checked="checked" type="radio" id="p2_diff_b"/>Beginner</label>
-   <label name="p2_diff" for="p2_diff_a"><input type="radio" id="p2_diff_a"/>Advanced</label>
+   <label for="p2_diff_a"><input type="radio" name="p2_diff" id="p2_diff_a"/>A</label>
+   <label for="p2_diff_b"><input type="radio" name="p2_diff" id="p2_diff_b" checked />B</label>
 </div>
 
 <div id="canvas_container" style="width:640px; height:400px;">
