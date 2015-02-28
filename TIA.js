@@ -330,7 +330,7 @@ InterStella_TIA.prototype.write = function(address, value)
    if (address === 0)      // VSYNC
       this.vsync = (value & 0x02) >>> 1;
    else if (address === 1) // VBLANK
-      this.vblank = (value & 0x80) >>> 7;
+      this.vblank = (value & 0x02) >>> 1;
    else if (address === 2) // WSYNC
       this.wsync = true;
    else if (address === 3) // RSYNC
