@@ -11,7 +11,8 @@ var InterStella_TIA = function(core)
    //  we'll just plot pixels manually by writing into the image data.
    var canvas_element = document.getElementById("interstella_canvas");
    this.drawing_context = canvas_element.getContext("2d");
-   this.image_data = this.drawing_context.getImageData(0, 0, canvas_element.width, canvas_element.height);
+   this.image_data = this.drawing_context.getImageData(
+      0, 0, canvas_element.width, canvas_element.height);
 };
 
 InterStella_TIA.prototype.reset = function()
@@ -81,6 +82,8 @@ InterStella_TIA.prototype.reset = function()
 
 InterStella_TIA.prototype.clock = function(cpu_cycles)
 {
+   var new_scanline = false;
+   
    // Figure out how many color clocks just elapsed.
    var pixels = cpu_cycles * 3;
    // Render that many pixels if we're rendering.
@@ -90,6 +93,7 @@ InterStella_TIA.prototype.clock = function(cpu_cycles)
    this.beam.x += pixels;
    if (this.beam.x > 227)
    {
+      new_scanline = true;
       this.beam.x -= 228;
       // In VBLANK the beam isn't actually moving.
       this.beam.y = (!this.vblank && !this.vsync) ? ((this.beam.y + 1) % 222) : 0;
@@ -100,17 +104,21 @@ InterStella_TIA.prototype.clock = function(cpu_cycles)
    if (this.wsync)
    {
       this.wsync = false;
-      pixels += (228 - this.beam.x);
       
-      // Render whatever we just added.
-      this.render_pixels(228 - this.beam.x);
-      
-      // Update the beam position once again.
-      this.beam.x = 0;
-      this.beam.y = (!this.vblank && !this.vsync) ? ((this.beam.y + 1) % 222) : 0;
-      // Update the display if we're starting a new frame now.
-      if (!this.beam.y)
-         this.update_display();
+      if (!new_scanline)
+      {
+         pixels += (228 - this.beam.x);
+         
+         // Render whatever we just added.
+         this.render_pixels(228 - this.beam.x);
+         
+         // Update the beam position once again.
+         this.beam.x = 0;
+         this.beam.y = (!this.vblank && !this.vsync) ? ((this.beam.y + 1) % 222) : 0;
+         // Update the display if we're starting a new frame now.
+         if (!this.beam.y)
+            this.update_display();
+      }
    }
 
    return pixels;
@@ -118,10 +126,6 @@ InterStella_TIA.prototype.clock = function(cpu_cycles)
 
 InterStella_TIA.prototype.render_pixels = function(num_pixels)
 {
-   // We'll draw some of the overscan area, but not all of it.
-   if (this.beam.y >= 200)
-      return;
-
    // Figure out what to do for each pixel we were told to plot, up to the end of the line.
    for (var x = this.beam.x; (x < (this.beam.x + num_pixels)) && (x < 228); ++x)
    {
@@ -171,41 +175,101 @@ InterStella_TIA.prototype.render_pixels = function(num_pixels)
       }
       
       // Now players 0 and 1.
-      if (x >= this.position_player_0)
+      if (x >= this.position_player_0 && this.data_player_0 !== 0)
       {
-         // There are four possible spots where we might have to draw a missile,
+         // There are several possible locations and sizes for the player,
          //  depending on the state of the NUSIZn registers.
-         if ((x < (this.position_player_0 + 8)) ||
-             (((this.player_missile_number_0 === 1) || (this.player_missile_number_0 === 3)) &&
-              (x < (this.position_player_0 + 8 + 16))) ||
-             (((this.player_missile_number_0 === 2) || (this.player_missile_number_0 === 3) ||
-               (this.player_missile_number_0 === 6)) &&
-              (x < (this.position_player_0 + 8 + 32))) ||
-             (((this.player_missile_number_0 === 4) || (this.player_missile_number_0 === 6)) &&
-              (x < (this.position_player_0 + 8 + 64))))
+         var p0_is_here = x < (this.position_player_0 + 8);
+         if (!p0_is_here && (this.player_missile_number_0 === 1 || this.player_missile_number_0 === 3))
          {
-            p0_data_bit = this.data_player_0 & (this.reflect_player_0 ? (1 << (pixel % 8)) : 
-                                                                        (0x80 >>> (pixel % 8)));
+            p0_is_here = (x < (this.position_player_0 + 24)) && (x >= (this.position_player_0 + 16));
+         }
+         if (!p0_is_here && (this.player_missile_number_0 === 2 || this.player_missile_number_0 === 3 ||
+                             this.player_missile_number_0 === 6))
+         {
+            p0_is_here = (x < (this.position_player_0 + 40)) && (x >= (this.position_player_0 + 32));
+         }
+         if (!p0_is_here && (this.player_missile_number_0 === 4 || this.player_missile_number_0 === 6))
+         {
+            p0_is_here = (x < (this.position_player_0 + 72)) && (x >= (this.position_player_0 + 64));
+         }
+         if (!p0_is_here && this.player_missile_number_0 === 5)
+         {
+            p0_is_here = x < (this.position_player_0 + 16);
+         }
+         else if (!p0_is_here && this.player_missile_number_0 === 7)
+         {
+            p0_is_here = x < (this.position_player_0 + 32);
+         }
+         
+         if (p0_is_here)
+         {
+            var p0_data_index = 0;
+            if (this.player_missile_number_0 === 5)
+            {
+               p0_data_index = Math.floor((x - this.position_player_0) / 2);
+            }
+            else if (this.player_missile_number_0 === 7)
+            {
+               p0_data_index = Math.floor((x - this.position_player_0) / 4);
+            }
+            else
+            {
+               p0_data_index = (x - this.position_player_0) % 8;
+            }
+
+            p0_data_bit = this.data_player_0 & (this.reflect_player_0 ?
+                                                  (1 << p0_data_index) : (0x80 >>> p0_data_index));
          }
       }
-      if (x >= this.position_player_1)
+      if (x >= this.position_player_1 && this.data_player_1 !== 0)
       {
-         if ((x < (this.position_player_1 + 8)) ||
-             (((this.player_missile_number_1 === 1) || (this.player_missile_number_1 === 3)) &&
-              (x < (this.position_player_1 + 8 + 16))) ||
-             (((this.player_missile_number_1 === 2) || (this.player_missile_number_1 === 3) ||
-               (this.player_missile_number_1 === 6)) &&
-              (x < (this.position_player_1 + 8 + 32))) ||
-             (((this.player_missile_number_1 === 4) || (this.player_missile_number_1 === 6)) &&
-              (x < (this.position_player_1 + 8 + 64))))
+         var p1_is_here = x < (this.position_player_1 + 8);
+         if (!p1_is_here && (this.player_missile_number_1 === 1 || this.player_missile_number_1 === 3))
          {
-            p1_data_bit = this.data_player_1 & (this.reflect_player_1 ? (1 << (pixel % 8)) : 
-                                                                        (0x80 >>> (pixel % 8)));
+            p1_is_here = (x < (this.position_player_1 + 24)) && (x >= (this.position_player_1 + 16));
+         }
+         if (!p1_is_here && (this.player_missile_number_1 === 2 || this.player_missile_number_1 === 3 ||
+                             this.player_missile_number_1 === 6))
+         {
+            p1_is_here = (x < (this.position_player_1 + 40)) && (x >= (this.position_player_1 + 32));
+         }
+         if (!p1_is_here && (this.player_missile_number_1 === 4 || this.player_missile_number_1 === 6))
+         {
+            p1_is_here = (x < (this.position_player_1 + 72)) && (x >= (this.position_player_1 + 64));
+         }
+         if (!p1_is_here && this.player_missile_number_1 === 5)
+         {
+            p1_is_here = x < (this.position_player_1 + 16);
+         }
+         else if (!p1_is_here && this.player_missile_number_1 === 7)
+         {
+            p1_is_here = x < (this.position_player_1 + 32);
+         }
+         
+         if (p1_is_here)
+         {
+            var p1_data_index = 0;
+            if (this.player_missile_number_0 === 5)
+            {
+               p1_data_index = Math.floor((x - this.position_player_1) / 2);
+            }
+            else if (this.player_missile_number_0 === 7)
+            {
+               p1_data_index = Math.floor((x - this.position_player_1) / 4);
+            }
+            else
+            {
+               p1_data_index = (x - this.position_player_1) % 8;
+            }
+
+            p1_data_bit = this.data_player_1 & (this.reflect_player_1 ?
+                                                  (1 << p1_data_index) : (0x80 >>> p1_data_index));
          }
       }
       
       // And now missiles 0 and 1.
-      if ((this.enable_missile_0) && (x >= this.position_missile_0))
+      if (this.enable_missile_0 && !this.reset_missile_0 && (x >= this.position_missile_0))
       {
          // There are four possible spots where we might have to draw a missile,
          //  depending on the state of the NUSIZn registers.
@@ -221,7 +285,7 @@ InterStella_TIA.prototype.render_pixels = function(num_pixels)
             m0_data_bit = 1;
          }
       }
-      if ((this.enable_missile_1) && (x >= this.position_missile_1))
+      if (this.enable_missile_1 && !this.reset_missile_1 && (x >= this.position_missile_1))
       {
          if ((x < (this.position_missile_1 + this.size_missile_1)) ||
              (((this.player_missile_number_1 === 1) || (this.player_missile_number_1 === 3)) &&
@@ -334,7 +398,7 @@ InterStella_TIA.prototype.write = function(address, value)
    else if (address === 2) // WSYNC
       this.wsync = true;
    else if (address === 3) // RSYNC
-      ; // This is documented as a testing command; we won't do it here.
+      void 0; // This is documented as a testing command; we won't do it here.
    else if (address === 4) // NUSIZ0
    {
       this.size_missile_0 = (1 << ((value & 0x30) >>> 4));
@@ -371,9 +435,25 @@ InterStella_TIA.prototype.write = function(address, value)
    else if (address === 0x0f) // PF2
       this.data_playfield = (this.data_playfield & 0xfff00) | value;
    else if (address === 0x10) // RESP0
+   {
       this.position_player_0 = this.beam.x;
+      if (this.reset_missile_0)
+      {
+         this.position_missile_0 = this.position_player_0 +
+            (this.number_player_missile_0 === 5) ? 6 :
+            (this.number_player_missile_0 === 7) ? 10 : 3;
+      }
+   }
    else if (address === 0x11) // RESP1
+   {
       this.position_player_1 = this.beam.x;
+      if (this.reset_missile_1)
+      {
+         this.position_missile_1 = this.position_player_1 +
+            (this.number_player_missile_1 === 5) ? 6 :
+            (this.number_player_missile_1 === 7) ? 10 : 3;
+      }
+   }
    else if (address === 0x12) // RESM0
       this.position_missile_0 = this.beam.x;
    else if (address === 0x13) // RESM1
@@ -383,11 +463,11 @@ InterStella_TIA.prototype.write = function(address, value)
    else if (address === 0x15) // AUDC0
       this.audio_control_0 = value & 0x0f;
    else if (address === 0x16) // AUDC1
-      this.audio_control_1 = value & 0x1f;
+      this.audio_control_1 = value & 0x0f;
    else if (address === 0x17) // AUDF0
-      this.audio_freq_0 = value & 0x0f;
+      this.audio_freq_0 = value & 0x1f;
    else if (address === 0x18) // AUDF1
-      this.audio_freq_1 = value & 0x0f;
+      this.audio_freq_1 = value & 0x1f;
    else if (address === 0x19) // AUDV0
       this.audio_vol_0 = value & 0x0f;
    else if (address === 0x1a) // AUDV1
@@ -446,47 +526,90 @@ InterStella_TIA.prototype.write = function(address, value)
    else if (address === 0x27) // VDELBL
       this.v_delay_ball = value & 0x01;
    else if (address === 0x28) // RESMP0
+   {
       this.reset_missile_0 = ((value & 0x02) >>> 1);
+      if (this.reset_missile_0)
+      {
+         this.position_missile_0 = this.position_player_0 +
+            (this.number_player_missile_0 === 5) ? 6 :
+            (this.number_player_missile_0 === 7) ? 10 : 3;
+      }
+   }
    else if (address === 0x29) // RESMP1
+   {
       this.reset_missile_1 = ((value & 0x02) >>> 1);
+      if (this.reset_missile_1)
+      {
+         this.position_missile_1 = this.position_player_1 +
+            (this.number_player_missile_1 === 5) ? 6 :
+            (this.number_player_missile_1 === 7) ? 10 : 3;
+      }
+   }
    else if (address === 0x2a) // HMOVE
    {
       // Apply horizontal motion
-      this.position_player_0 += this.h_motion_player_0;
-      if (this.position_player_0 < 0)
-         this.position_player_0 += 256;
+      var modulus = function(input, min, max)
+      {
+         if (input > max)
+            return input - (max - min);
+         else if (input < min)
+            return input + (max - min);
+         else
+            return input;
+      };
       
-      this.position_player_1 += this.h_motion_player_1;
-      if (this.position_player_1 < 0)
-         this.position_player_1 += 256;
+      this.position_player_0 = modulus(this.position_player_0 - this.h_motion_player_0, 68, 228);
+      this.position_player_1 = modulus(this.position_player_1 - this.h_motion_player_1, 68, 228);
+      this.position_ball = modulus(this.position_ball - this.h_motion_ball, 68, 228);
       
-      this.position_missile_0 += this.h_motion_missile_0;
-      if (this.position_missile_0 < 0)
-         this.position_missile_0 += 256;
-      
-      this.position_missile_1 += this.h_motion_missile_1;
-      if (this.position_missile_1 < 0)
-         this.position_missile_1 += 256;
-      
-      this.position_ball += this.h_motion_ball;
-      if (this.position_ball < 0)
-         this.position_ball += 256;
+      if (this.reset_missile_0)
+      {
+         this.position_missile_0 = this.position_player_0 +
+            (this.number_player_missile_0 === 5) ? 6 :
+            (this.number_player_missile_0 === 7) ? 10 : 3;
+      }
+      else
+      {
+         this.position_missile_0 = modulus(this.position_missile_0 - this.h_motion_missile_0, 68, 228);
+      }
+      if (this.reset_missile_1)
+      {
+         this.position_missile_1 = this.position_player_1 +
+            (this.number_player_missile_1 === 5) ? 6 :
+            (this.number_player_missile_1 === 7) ? 10 : 3;
+      }
+      else
+      {
+         this.position_missile_1 = modulus(this.position_missile_1 - this.h_motion_missile_1, 68, 228);
+      }
    }
    else if (address === 0x2b) // HMCLR
    {
       // Clear horizontal motion registers
-      this.h_motion_player_0 = this.h_motion_player_1 =
-      this.h_motion_missile_0 = this.h_motion_missile_1 =
+      this.h_motion_player_0 = 0;
+      this.h_motion_player_1 = 0;
+      this.h_motion_missile_0 = 0;
+      this.h_motion_missile_1 = 0;
       this.h_motion_ball = 0;
    }
    else if (address === 0x2c) // CXCLR
    {
       // Clear all collision latches
-      this.collisions.m0p1 = this.collisions.m0p0 = this.collisions.m1p0 =
-      this.collisions.m1p1 = this.collisions.p0pf = this.collisions.p0bl =
-      this.collisions.p1pf = this.collisions.p1bl = this.collisions.m0pf =
-      this.collisions.m0bl = this.collisions.m1pf = this.collisions.m1bl =
-      this.collisions.blpf = this.collisions.p0p1 = this.collisions.m0m1 = 0;
+      this.collisions.m0p1 = 0;
+      this.collisions.m0p0 = 0;
+      this.collisions.m1p0 = 0;
+      this.collisions.m1p1 = 0;
+      this.collisions.p0pf = 0;
+      this.collisions.p0bl = 0;
+      this.collisions.p1pf = 0;
+      this.collisions.p1bl = 0;
+      this.collisions.m0pf = 0;
+      this.collisions.m0bl = 0;
+      this.collisions.m1pf = 0;
+      this.collisions.m1bl = 0;
+      this.collisions.blpf = 0;
+      this.collisions.p0p1 = 0;
+      this.collisions.m0m1 = 0;
    }
 };
 

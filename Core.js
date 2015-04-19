@@ -50,6 +50,7 @@ InterStella_core.prototype.run_one_frame = function()
       var tia_cycles = this.tia.clock(cpu_cycles);
       // Now evaluate the new timer states.
       // The timer is based of CPU cycles, to turn the TIA cycles back into those.
+      // (we can't use our own CPU cycle count because the TIA might have delayed)
       this.timer -= (tia_cycles * 3) / this.timer_interval;
       if (this.timer < 0)
       {
@@ -168,8 +169,8 @@ InterStella_core.prototype.key_up = function(event)
 
 InterStella_core.prototype.read_port_a = function()
 {
-   var stick = (this.joystick.up << 4) | (this.joystick.down << 5) |
-               (this.joystick.left << 6) | (this.joystick.right << 7);
+   var stick = (!this.joystick.up << 4) | (!this.joystick.down << 5) |
+               (!this.joystick.left << 6) | (!this.joystick.right << 7);
 
    // From the Stella M6532.cxx file:
    // Each pin is high (1) by default and will only go low (0) if either
@@ -210,10 +211,14 @@ InterStella_core.prototype.mem_read = function(address)
       else if (address === 1) return this.port_a_direction;
       else if (address === 2) return this.read_port_b();
       else if (address === 3) return this.port_b_direction;
-      else if ((address === 4) || (address === 6)) return this.timer;
-      else
+      else if ((address === 4) || (address === 6)) // INTIM
       {
-         var retval = ((this.timer_underflow_1 << 7) | (this.timer_underflow_2 << 6));
+         this.timer_interval = this.timer_interval_saved;
+         return Math.ceil(this.timer);
+      }
+      else // INSTAT
+      {
+         var retval = ((this.timer_underflow_1 << 6) | (this.timer_underflow_2 << 7));
          this.timer_underflow_1 = 0;
          return retval;
       }
@@ -225,7 +230,7 @@ InterStella_core.prototype.mem_read = function(address)
       // Only one joystick is implemented here.
       if ((address & 0x000f) === 0x0c)
       {
-         return (this.joystick.button << 7);
+         return (!this.joystick.button << 7);
       }
       else
       {
@@ -268,7 +273,7 @@ InterStella_core.prototype.mem_write = function(address, value)
       // PIA I/O
       if (address & 0x0040)
       {
-         if (address & 0x0010)
+         if (address & 0x0010) // TIM1T / TIM8T / TIM64T / T1024T
          {
             // Timer value and interval
             this.timer = value;
@@ -276,7 +281,7 @@ InterStella_core.prototype.mem_write = function(address, value)
                                   ((address & 0x03) === 1) ? 8 :
                                   ((address & 0x03) === 2) ? 64 : 1024;
             this.timer_interval_saved = this.timer_interval;
-            
+            this.timer_underflow_2 = 0;
          }
          else
          {
